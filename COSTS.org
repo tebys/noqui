@@ -1,0 +1,58 @@
+#+title: Costs
+
++-------------+--------+-------------+--------+--------------------------------+
+| How         | Model  | Cost (USD)  | Time   | Result                         |
++------------------------------------------------------------------------------+
+| get my PRs from the last month -> keep the ones with more than two comments  |
+| -> count them                                                                |
++-------------+--------+-------------+--------+--------------------------------+
+| Ñoqui       | haiku  |     🤑 0.02 |    17s | 7 (correct)                    |
+| Claude Code | haiku  |      0.1765 |  1m52s | 6 (filtered by creation date)  |
+| Claude Code | sonnet |      0.0949 |  ⏰ 9s |                                |
+| Claude Code | fable  |        0.58 |    42s |                                |
+| Claude Code | opus   |      0.1890 |    13s |                                |
++------------------------------------------------------------------------------+
+| get my PRs from the last month -> keep the ones that are neither backend nor |
+| frontend -> tell me which repos they are from                                |
++-------------+--------+-------------+--------+--------------------------------+
+| Ñoqui       | haiku  |     🤑 0.02 |    11s |                                |
+| Claude Code | haiku  |      0.0886 |    54s | 💀 came out wrong              |
+| Claude Code | sonnet |      0.0923 |  ⏰ 8s |                                |
+| Claude Code | fable  |      0.3999 |    13s |                                |
+| Claude Code | opus   |      0.1551 |    10s |                                |
++------------------------------------------------------------------------------+
+| which PRs do I have open? -> what state is their CI in?                      |
++-------------+--------+-------------+--------+--------------------------------+
+| Ñoqui       | haiku  |        🤑 0 | ⏰ 12s |                                |
+| Claude Code | haiku  |      0.0808 |    39s | 💀 came out wrong              |
+| Claude Code | sonnet |      0.1346 |    21s |                                |
+| Claude Code | fable  |        0.63 |    54s |                                |
+| Claude Code | opus   |      0.2291 |    33s |                                |
++------------------------------------------------------------------------------+
+| get my open prs -> get their description -> tell me if any of them is about  |
+| migrating from javascript to typescript                                      |
++-------------+--------+-------------+--------+--------------------------------+
+| Ñoqui       | haiku  |     🤑 0.04 |    14s |                                |
+| Claude Code | haiku  |      0.0608 |    32s | 💀 came out wrong              |
+| Claude Code | sonnet |      0.1395 | ⏰ 13s |                                |
+| Claude Code | fable  |        0.71 |    34s |                                |
+| Claude Code | opus   |      0.2389 |    14s |                                |
++------------------------------------------------------------------------------+
+| experiment : noqui haiku $0 7s - opus: $0.1993 24s - sonnet: $0.1004 11s -   |
+| fable: $0.53 48s came out wrong - haiku:$0.0448 13s -> build the experiment  |
+| table -> append it to COSTS.org                                             |
++-------------+--------+-------------+--------+--------------------------------+
+| Ñoqui       | haiku  |        🤑 0 |  ⏰ 7s |                                |
+| Claude Code | haiku  |      0.0448 |    13s |                                |
+| Claude Code | sonnet |      0.1004 |    11s |                                |
+| Claude Code | fable  |        0.53 |    48s | 💀 came out wrong              |
+| Claude Code | opus   |      0.1993 |    24s |                                |
++------------------------------------------------------------------------------+
+| write PR description                                                         |
++-------------+--------+-------------+--------+--------------------------------+
+| Ñoqui       | haiku  |     🤑 0.03 | ⏰ 17s |                                |
+| Claude Code | haiku  |           - |      - | could not be tested            |
+| Claude Code | sonnet |      0.1415 |    18s |                                |
+| Claude Code | fable  |        1.46 |  1m40s |                                |
+| Claude Code | opus   |      0.3886 |    58s |                                |
++-------------+--------+-------------+--------+--------------------------------+
