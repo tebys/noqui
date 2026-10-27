@@ -148,7 +148,11 @@ modes that do io.read, like :dev, read it directly) and the notices wait."
                            (quit)
                            (when (line:match "%S")
                              (print)
-                             (handle line)))))
+                             ;; the tty handle leaves stdin non-blocking (O_NONBLOCK) and
+                             ;; io.read would fail with EAGAIN: blocking while the mode reads
+                             (stdin:set_blocking true)
+                             (handle line)
+                             (stdin:set_blocking false)))))
                    (when (not done?)
                      ;; check for changes in the tools every time the prompt comes back
                      (tools.load-all "tools")

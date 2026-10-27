@@ -48,9 +48,10 @@ To start, reply only: ready.")
   code)
 
 (fn check-code [code]
-  "Without running anything: it must have a :name and compile. Returns the name or raises the error."
-  (let [name (or (code:match ":name%s+\"([%w%-_]+)\"")
-                 (error "could not find the tool's :name" 0))
+  "Without running anything: it must have a name and compile. Returns the name or raises the error."
+  (let [name (or (code:match "%(deftool%s+([%w%-_]+)")
+                 (code:match ":name%s+\"([%w%-_]+)\"")
+                 (error "could not find the tool's name: expected (deftool <name> {...})" 0))
         (ok err) (pcall fennel.compile-string code {:filename (tool-path name)})]
     (when (not ok)
       (error (.. "does not compile: " (strip-ansi (tostring err))) 0))
@@ -124,11 +125,53 @@ Returns the backup path, if any."
     (done)
     (values answer cost)))
 
+(fn flush-stdin []
+  "Discards what is pending in the terminal's input (lines pasted or typed while Claude was
+answering), so that it is not read as the answer to a question that was not shown yet."
+  (os.execute "python3 -c 'import termios; termios.tcflush(0, termios.TCIFLUSH)' < /dev/tty 2>/dev/null"))
+
 (fn confirm [question]
   ;; own style: orange (peach) is the color of code in Claude's answer
-  (io.write "\n" (ui.c :yellow "?") "  " (ui.bold question) (ui.c :faint " [y/N] "))
+  ;; only an explicit y or n counts: an Enter typed while Claude was still answering
+  ;; (or a pasted line) sits in stdin and would otherwise be read as an instant "no"
+  (flush-stdin)
+  (io.write "\n" (ui.c :yellow "?") "  " (ui.bold question) (ui.c :faint " [y/n] "))
   (io.flush)
-  (= (: (or (io.read :l) "") :lower) "y"))
+  (var answer nil)
+  (var invalid 0)
+  (while (not answer)
+    (let [(line err) (io.read :l)
+          a (pick-values 1 (: (: (or line "n") :lower) :gsub "%s+" ""))] ; EOF: no
+      (if (or (= a "y") (= a "yes")) (set answer :yes)
+          (or (= a "n") (= a "no") (not line)) (set answer :no)
+          (do (set invalid (+ invalid 1))
+              (if (< invalid 5)
+                  (io.write "\n" (ui.c :faint (string.format "   type y or n (read %q)  " line)))
+                  ;; stdin keeps returning junk (not a terminal waiting for a key): give up
+                  (do (io.write "\n" (ui.c :faint "   no answer: not saved"))
+                      (set answer :no)))
+              (io.flush)))))
+  (= answer :yes))
+
+(fn read-message [line]
+  "A line that starts with \"\"\" opens a multi-line message: it goes on until a line that ends
+with \"\"\" (or EOF), and is sent to Claude as a single message. Any other line is the message."
+  (let [body (line:match "^%s*\"\"\"(.*)$")]
+    (if (not body)
+        line
+        (let [lines []]
+          (var current body)
+          (var closed? false)
+          (while (and current (not closed?))
+            (let [before (current:match "^(.-)\"\"\"%s*$")]
+              (if before
+                  (do (table.insert lines before)
+                      (set closed? true))
+                  (do (table.insert lines current)
+                      (io.write (ui.c :faint "  … "))
+                      (io.flush)
+                      (set current (io.read :l))))))
+          (pick-values 1 (: (: (table.concat lines "\n") :gsub "^%s+" "") :gsub "%s+$" ""))))))
 
 (fn attach [sent names]
   "Code of the tools `names`, except those Claude has already seen unchanged since
@@ -220,11 +263,13 @@ it, and loads it. Returns the last cost."
         session (acp.open-session)
         (_ first-cost) (acp.ask session text)
         sent {}] ; tool -> version of the code Claude has already seen
-    (ui.finish :ok "session" "ready · :fin to go back" (- (ui.now) t0))
+    (ui.finish :ok "session" (.. "ready · " (or (acp.model-name) "unknown model") " · \"\"\" for multi-line · :fin to go back") (- (ui.now) t0))
     (var cost (or first-cost 0))
     (var line nil)
     (while (do (ui.prompt "dev")
                (set line (io.read :l))
+               (when (and line (not= line ":fin"))
+                 (set line (read-message line)))
                (and line (not= line ":fin")))
       (when (line:match "%S")
         (let [(ok err) (pcall #(let [code (attach sent (mentioned line))

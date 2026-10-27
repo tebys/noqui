@@ -11,6 +11,8 @@
 
 (var agent nil)
 (var next-id 0)
+;; display name of the model of the last session opened (e.g. "Sonnet 5.5")
+(var model-label nil)
 ;; fn (toolCall) -> true if approved. Without a policy nothing is approved.
 (var policy nil)
 
@@ -94,6 +96,11 @@ Claude remembers the whole conversation. ?opts: {:cwd working directory
                             {: sessionId :configId :model :value model})]
         (when (not ok)
           (error (model-error model model-option) 0))))
+    ;; what the agent calls the model that is really in use: "default" is not a
+    ;; model but a pointer, and its description says which one it points to
+    (let [wanted (if (and model model-option) model (and model-option model-option.currentValue))
+          current (and model-option (utils.find model-option.options (fn [o] (= o.value wanted))))]
+      (set model-label (and current (if (= current.value "default") current.description current.name))))
     sessionId))
 
 (fn ask [session-id text on-chunk]
@@ -127,4 +134,8 @@ killed: otherwise, the popen close waits for it forever."
     (os.remove agent.inbox)
     (set agent nil)))
 
-{: prompt : open-session : ask : stop : set-policy : reply : model-error}
+(fn model-name []
+  "Display name of the model the last session opened uses (e.g. \"Sonnet 5.5\"), or nil."
+  model-label)
+
+{: prompt : open-session : ask : stop : set-policy : reply : model-error : model-name}
