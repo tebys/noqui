@@ -77,8 +77,8 @@
                               (open-claude)
                               (= prompt ":tools")
                               (list-tools)
-                              (or (= prompt ":watch") (prompt:match "^:watch%s"))
-                              (let [(ok res) (pcall watch.run (prompt:match "^:watch%s+(%S+)"))]
+                              (or (prompt:match "^:watch!?$") (prompt:match "^:watch!?%s"))
+                              (let [(ok res) (pcall watch.run (prompt:match "^:watch!?%s+(%S+)") (prompt:match "^:watch!"))]
                                 (if ok
                                     (when res (ui.notice :info (.. "watch in the background · details in " res)))
                                     (ui.notice :error (tostring res))))
@@ -101,7 +101,7 @@
     (ui.guide)
     (each [_ line (ipairs ["a -> b -> c to chain steps · :q to quit"
                            ":snippets · :tools · :dev [model] · :wt repo ticket · :fin"
-                           ":terminal · :claude · :watch [min|stop]"])]
+                           ":terminal · :claude · :watch[!] [min|stop]"])]
       (print (.. (ui.c :faint "│  ") (ui.c :faint line))))
     (print (ui.c :faint "└"))))
 
