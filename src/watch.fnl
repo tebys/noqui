@@ -24,8 +24,11 @@
 (local max-errors 3)        ; consecutive gh failures before giving up
 (local max-listed 15)       ; failed checks reported to Claude
 (local max-runs 2)          ; runs whose failed logs are fetched for Claude
-(local log-lines 300)       ; last lines of each run's failed log
-(local log-chars 15000)     ; ...and at most these characters
+(local log-lines 300)       ; last lines of the log when no failure marker is found
+(local log-chars 15000)     ; at most these characters per run
+(local log-before 3)        ; lines of context before / after each failure marker
+(local log-after 25)
+(local failure-markers ["Failed Tests" "FAIL " "AssertionError" "##[error]"]) ; strong ones: "Error:" also matches the noise of passing tests
 (local claude-model "sonnet")
 (local approval-checks {"require approvals" true "require reviews" true}) ; resolved by a person: neither waited for nor fixed
 
@@ -153,7 +156,7 @@ is counted in the summary but not in failed or pending."
         "Failed checks" (if (> (length failed) max-listed) (.. " (first " max-listed " of " (length failed) ")") "")
         ":\n" (table.concat listed "\n") "\n\n"
         "Attempt " attempt " of " max-attempts ". Tasks:\n"
-        "1. The logs of the failed checks (end of `gh run view --log-failed`) are below, already fetched: do not look for them.\n"
+        "1. The logs of the failed checks (the lines around the failures in `gh run view --log-failed`) are below, already fetched: do not look for them. Each one is only an excerpt: if it does not show the failing test, assertion or stack trace, search the full log file named in its header with Grep/Read (do not use shell commands for that).\n"
         "2. Fix the cause in the code. If the failure is infrastructure-related or flaky and there is nothing to fix in the code, change nothing and reply starting with \"NO CHANGES:\" and the reason.\n"
         "3. Only if tools are already available in this worktree, verify locally with lint or targeted tests. Do not try to run formatters (oxfmt, prettier) or other tools from other checkouts, and do not try to install anything. If you cannot verify, that is NOT a reason to stop: make your best fix anyway; CI will check it, and the watch will bring you back if it still fails.\n"
         "4. Do NOT run git add, commit or push: the watch does that. Leave your edits in the working tree.\n\n"
@@ -282,6 +285,44 @@ else the runs of the failed checks. Each is {:id .. :job? ..}."
           (table.insert targets {: id :job? (and by-job? job true)}))))
     targets))
 
+(fn failure-line? [line]
+  (accumulate [hit false _ m (ipairs failure-markers) &until hit]
+    (and (line:find m 1 true) true)))
+
+(fn relevant-log [text]
+  "Failures are usually followed by minutes of teardown, so the end of the log is not
+enough: keeps the lines around the failure markers (without consecutive repeats) and falls
+back to the end of the log when there are none."
+  (let [lines (icollect [l (text:gmatch "[^\n]*")] l)
+        keep {}]
+    (each [i l (ipairs lines)]
+      (when (failure-line? l)
+        (for [j (math.max 1 (- i log-before)) (math.min (length lines) (+ i log-after))]
+          (tset keep j true))))
+    (let [out [] ]
+      (var last nil)
+      (var size 0)
+      (each [i l (ipairs lines)]
+        (let [bare (l:gsub "^%S+Z " "")]
+          (when (and (. keep i) (not= bare last) (< size log-chars))
+            (table.insert out l)
+            (set size (+ size (length l) 1))
+            (set last bare))))
+      (if (= (length out) 0)
+          (let [tail (icollect [i l (ipairs lines)] (when (> i (- (length lines) log-lines)) l))
+                joined (table.concat tail "\n")]
+            (joined:sub (math.max 1 (- (length joined) log-chars -1))))
+          (table.concat out "\n")))))
+
+(fn save-log [w id text]
+  "Writes the whole log to /tmp (Claude may read it there); returns the path or nil."
+  (let [path (.. "/tmp/noqui-watch-" id ".log")
+        f (io.open path "w")]
+    (when f
+      (f:write text)
+      (f:close)
+      path)))
+
 (fn fetch-logs [w failed by-job? cb]
   "Fetches (without blocking) the end of the failed logs of the first targets and calls
 (cb text). It is the watch who runs the commands: Claude receives the result. With the
@@ -297,11 +338,15 @@ has already finished is available through the API (`by-job?`)."
                 source (if job?
                            (.. "gh api --allow-escape-sequences " (sh.quote (.. "repos/" repo "/actions/jobs/" id "/logs")))
                            (.. "gh run view " id " --repo " (sh.quote repo) " --log-failed"))]
-            (aio.run (.. source " | perl -pe 's/\\e\\[[0-9;]*[A-Za-z]//g' | tail -n " log-lines " | tail -c " log-chars)
-                     (safe w (fn [out code]
-                               (wlog w (.. "logs of " (if job? "job " "run ") id ": " (length out) " chars, code " (tostring code)))
-                               (when (and (= code 0) (not= (trim out) ""))
-                                 (table.insert parts (.. "== " (if job? "job " "run ") id " ==\n" out)))
+            (aio.run (.. source " | perl -pe 's/\\e\\[[0-9;]*[A-Za-z]//g'")
+                     (safe w (fn [raw code]
+                               (let [out (if (= code 0) (relevant-log raw) "")
+                                     file (when (and (= code 0) (not= (trim raw) "")) (save-log w id raw))]
+                                 (wlog w (.. "logs of " (if job? "job " "run ") id ": " (length raw) " -> " (length out) " chars, code " (tostring code) (if file (.. ", full log in " file) "")))
+                                 (when (not= (trim out) "")
+                                   (table.insert parts (.. "== " (if job? "job " "run ") id " ==\n"
+                                                           (if file (.. "(excerpt; the FULL log is the file " file ": search it with Grep for FAIL, AssertionError, or the test file names of this branch, and Read the lines around)\n") "")
+                                                           out))))
                                (step (+ i 1))))))))
     (step 1)))
 
