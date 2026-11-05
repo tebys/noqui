@@ -1,13 +1,14 @@
 ;; :dev — self-development. You enter, do the work, and leave: a dedicated Claude
 ;; session that starts with the guide (src/guide.fnl), and ñoqui compiles and
-;; validates the tools it proposes before saving them. Normal mode is unaffected.
+;; validates the tools and snippets it proposes before saving them. Normal mode is unaffected.
 ;;
 ;; Until the user confirms, the code is only compiled (not run). On confirmation it
 ;; is saved and loaded; if that fails, it is rolled back (the new one is deleted or
 ;; the previous one restored) and the error goes back to Claude.
 ;;
 ;; To edit, Claude needs to see the current code: it is attached only when the
-;; user names a tool, or when Claude asks for it with [see tools/x.fnl].
+;; user names a tool or a snippet (:name), or when Claude asks for it with
+;; [see tools/x.fnl] or [see snippets/x.fnl].
 (local fennel (require :fennel))
 (local acp (require :src.acp))
 (local guide (require :src.guide))
@@ -20,25 +21,30 @@
 (local max-reads 3) ; consecutive [see ...] requests answered automatically
 (local valid-types {:string true :integer true :date true})
 
-(local intro "You are the development assistant of ñoqui, a REPL that solves requests with tools (Fennel scripts) and hands Claude whatever no tool can solve. You will help create new tools and modify existing ones. The guide is below.
+(local intro "You are the development assistant of ñoqui, a REPL that solves requests with tools (Fennel scripts) and hands Claude whatever no tool can solve; snippets are fixed plans of tool steps. You will help create new tools and snippets and modify existing ones. The guide is below.
 
 Rules:
 - Speak English, briefly. If information is missing, ask before writing code.
 - You have no tools: you cannot read or write files or run commands.
-- To see a tool's code, write [see tools/<name>.fnl] and ñoqui will send it to you. When the user names a tool, ñoqui attaches its code automatically.
-- When you propose a tool (new or modified), put the COMPLETE file in a single ```fennel block. To modify one, use the same :name. ñoqui compiles it; if it fails it sends you the error so you can fix it. If it compiles, it shows the user the diff (if it is a modification) and asks whether to save it.
+- To see the code of a tool or a snippet, write [see tools/<name>.fnl] or [see snippets/<name>.fnl] and ñoqui will send it to you. When the user names a tool (or a snippet as :name), ñoqui attaches its code automatically.
+- When you propose a tool (a `deftool` form) or a snippet (a `defsnippet` form, with its ! variant under :bang), put the COMPLETE file in a single ```fennel block. To modify one, use the same name. One block per answer: if a snippet needs a tool that does not exist, propose the tool first and the snippet in the next answer. ñoqui compiles it; if it fails it sends you the error so you can fix it. If it compiles, it shows the user the diff (if it is a modification) and asks whether to save it.
 
 To start, reply only: ready.")
 
 (fn strip-ansi [s]
-  (pick-values 1 (s:gsub "\27%[[%d;]*m" "")))
+  "The error text without colors and without the Lua traceback (it says nothing about the file)."
+  (let [plain (pick-values 1 (s:gsub "\27%[[%d;]*m" ""))]
+    (pick-values 1 (: (or (plain:match "^(.-)\n?stack traceback:") plain) :gsub "%s+$" ""))))
 
-(fn tool-path [name]
-  (.. "tools/" name ".fnl"))
+(fn artifact-dir [kind]
+  (if (= kind :snippet) "snippets" "tools"))
 
-(fn tool-names []
-  (let [(out) (sh.run "ls tools/*.fnl 2>/dev/null")]
-    (icollect [name (out:gmatch "tools/([^\n]+)%.fnl")] name)))
+(fn artifact-path [kind name]
+  (.. (artifact-dir kind) "/" name ".fnl"))
+
+(fn names-in [dir]
+  (let [(out) (sh.run (.. "ls " dir "/*.fnl 2>/dev/null"))]
+    (icollect [name (out:gmatch (.. dir "/([^\n]+)%.fnl"))] name)))
 
 (fn extract-code [answer]
   "The last ```fennel block of the answer, or nil."
@@ -48,14 +54,18 @@ To start, reply only: ready.")
   code)
 
 (fn check-code [code]
-  "Without running anything: it must have a name and compile. Returns the name or raises the error."
-  (let [name (or (code:match "%(deftool%s+([%w%-_]+)")
+  "Without running anything: it must be a tool or a snippet, have a name and compile.
+Returns (values kind name) or raises the error."
+  (let [snippet (code:match "%(defsnippet%s+([%w%-_]+)")
+        kind (if snippet :snippet :tool)
+        name (or snippet
+                 (code:match "%(deftool%s+([%w%-_]+)")
                  (code:match ":name%s+\"([%w%-_]+)\"")
-                 (error "could not find the tool's name: expected (deftool <name> {...})" 0))
-        (ok err) (pcall fennel.compile-string code {:filename (tool-path name)})]
+                 (error "could not find the name: expected (deftool <name> {...}) or (defsnippet <name> {...})" 0))
+        (ok err) (pcall fennel.compile-string code {:filename (artifact-path kind name)})]
     (when (not ok)
       (error (.. "does not compile: " (strip-ansi (tostring err))) 0))
-    name))
+    (values kind name)))
 
 (fn check-tool [tool name]
   "The loaded table must have the shape of a tool."
@@ -77,21 +87,47 @@ To start, reply only: ready.")
     (when (next problems)
       (error (table.concat problems "; ") 0))))
 
-(fn save [code name]
-  "Saves and loads the tool. If it already existed, first saves a backup in /tmp.
+(fn check-snippets [file name]
+  "The loaded file must return the snippet `name` (and, if there, `name!`) with description and steps."
+  (let [problems []]
+    (fn bad [msg] (table.insert problems msg))
+    (if (not= (type file) :table) (bad "the file must return a table")
+        (do
+          (when (not (. file name)) (bad (.. "it must define the snippet " name)))
+          (each [n snippet (pairs file)]
+            (when (not (or (= n name) (= n (.. name "!")))) (bad (.. "unexpected snippet " n)))
+            (when (not (and (= (type snippet.description) :string) (snippet.description:match "%S")))
+              (bad (.. n ": missing :description")))
+            (when (not (and (= (type snippet.steps) :table) (> (length snippet.steps) 0)))
+              (bad (.. n ": missing :steps"))))))
+    (when (next problems)
+      (error (table.concat problems "; ") 0))))
+
+(fn check-loaded [kind result name]
+  (if (= kind :snippet)
+      (check-snippets result name)
+      (check-tool result name)))
+
+(fn save [kind code name]
+  "Saves and loads the tool or snippet. If it already existed, first saves a backup in /tmp.
 If it does not load properly, rolls back (deletes the new one or restores the previous one) and raises the error.
-Returns the backup path, if any."
-  (let [path (tool-path name)
+Returns (values backup-path-if-any commands), the commands being what a snippet can be run as."
+  (let [path (artifact-path kind name)
         old (read path)
-        backup (when old (.. "/tmp/noqui-tool-" name "-" (os.date "%Y%m%d-%H%M%S") ".fnl"))]
+        backup (when old (.. "/tmp/noqui-" (tostring kind) "-" name "-" (os.date "%Y%m%d-%H%M%S") ".fnl"))]
     (when backup (write backup old))
+    (sh.run (.. "mkdir -p " (artifact-dir kind)))
     (write path code)
     (let [(ok result) (pcall fennel.dofile path)
-          (valid err) (if ok (pcall check-tool result name) (values false (strip-ansi (tostring result))))]
+          (valid err) (if ok (pcall check-loaded kind result name) (values false (strip-ansi (tostring result))))]
       (when (not valid)
         (if old (write path old) (os.remove path))
-        (error (.. "does not load: " err) 0)))
-    backup))
+        (error (.. "does not load: " err) 0))
+      (values backup
+              (when (= kind :snippet)
+                (let [names (icollect [n (pairs result)] n)]
+                  (table.sort names)
+                  (table.concat (icollect [_ n (ipairs names)] (.. ":" n)) " and ")))))))
 
 (fn diff-lines [old new]
   "Unified diff (without headers) between the current version and the proposed one."
@@ -173,37 +209,48 @@ with \"\"\" (or EOF), and is sent to Claude as a single message. Any other line 
                       (set current (io.read :l))))))
           (pick-values 1 (: (: (table.concat lines "\n") :gsub "^%s+" "") :gsub "%s+$" ""))))))
 
-(fn attach [sent names]
-  "Code of the tools `names`, except those Claude has already seen unchanged since
-then. `sent` remembers which version it saw of each one."
+(fn attach [sent paths]
+  "Code of the files `paths` (tools/x.fnl, snippets/x.fnl), except those Claude has already
+seen unchanged since then. `sent` remembers which version it saw of each one."
   (let [parts []]
-    (each [_ name (ipairs names)]
-      (let [code (read (tool-path name))]
-        (when (and code (not= (. sent name) code))
-          (tset sent name code)
-          (ui.notice :info (.. "attaching the code of tools/" name ".fnl"))
-          (table.insert parts (.. "[ñoqui attaches the current code of tools/" name ".fnl]\n```fennel\n" code "```")))))
+    (each [_ path (ipairs paths)]
+      (let [code (read path)]
+        (when (and code (not= (. sent path) code))
+          (tset sent path code)
+          (ui.notice :info (.. "attaching the code of " path))
+          (table.insert parts (.. "[ñoqui attaches the current code of " path "]\n```fennel\n" code "```")))))
     (table.concat parts "\n\n")))
 
 (fn mentioned [line]
-  "The existing tools named in `line`."
-  (icollect [_ name (ipairs (tool-names))]
-    ;; whole word: "count" must not match in "account"
-    (let [escaped (pick-values 1 (name:gsub "%-" "%%-"))]
-      (when (line:find (.. "%f[%w%-]" escaped "%f[^%w%-]")) name))))
+  "The paths of the existing tools and snippets named in `line`: a tool by its name, a
+snippet as :name (or :name!) or snippets/name."
+  (let [paths []
+        padded (.. " " line " ")]
+    (each [_ name (ipairs (names-in "tools"))]
+      ;; whole word: "count" must not match in "account"
+      (let [escaped (pick-values 1 (name:gsub "%-" "%%-"))]
+        (when (line:find (.. "%f[%w%-]" escaped "%f[^%w%-]"))
+          (table.insert paths (artifact-path :tool name)))))
+    (each [_ name (ipairs (names-in "snippets"))]
+      (let [escaped (pick-values 1 (name:gsub "%-" "%%-"))]
+        (when (or (padded:find (.. "%s:" escaped "[^%w%-_]"))
+                  (padded:find (.. "snippets/" escaped "[^%w%-_]")))
+          (table.insert paths (artifact-path :snippet name)))))
+    paths))
 
 (fn answer-reads [session sent answer]
-  "If Claude asked to see tools with [see tools/x.fnl], sends them (up to
-max-reads times in a row). Returns (values last-answer cost)."
+  "If Claude asked to see files with [see tools/x.fnl] or [see snippets/x.fnl], sends them
+(up to max-reads times in a row). Returns (values last-answer cost)."
   (var answer answer)
   (var cost nil)
   (var n 0)
-  (while (and answer (< n max-reads) (answer:find "[see tools/" 1 true))
+  (while (and answer (< n max-reads) (or (answer:find "[see tools/" 1 true) (answer:find "[see snippets/" 1 true)))
     (set n (+ n 1))
-    (let [names (icollect [name (answer:gmatch "%[see tools/([%w%-_]+)%.fnl%]")] name)
-          missing (icollect [_ name (ipairs names)] (when (not (read (tool-path name))) name))
-          text (.. (attach sent names)
-                   (if (next missing) (.. "\n\nNot found:" (table.concat missing ", ")) ""))]
+    (let [paths (icollect [dir name (answer:gmatch "%[see (%a+)/([%w%-_]+)%.fnl%]")]
+                  (when (or (= dir "tools") (= dir "snippets")) (.. dir "/" name ".fnl")))
+          missing (icollect [_ path (ipairs paths)] (when (not (read path)) path))
+          text (.. (attach sent paths)
+                   (if (next missing) (.. "\n\nNot found: " (table.concat missing ", ")) ""))]
       (if (text:match "%S")
           (let [(a c) (ask session text)]
             (set answer a)
@@ -213,7 +260,7 @@ max-reads times in a row). Returns (values last-answer cost)."
   (values answer cost))
 
 (fn handle-proposal [session sent answer]
-  "If the answer contains a tool: compiles it (and asks Claude to fix it up to
+  "If the answer contains a tool or a snippet: compiles it (and asks Claude to fix it up to
 max-fixes times), shows the diff if it is a modification, asks whether to save
 it, and loads it. Returns the last cost."
   (var answer answer)
@@ -222,23 +269,25 @@ it, and loads it. Returns the last cost."
   (var done? false)
   (while (and (not done?) (extract-code answer))
     (let [code (extract-code answer)
-          (ok name) (pcall check-code code)
-          old (when ok (read (tool-path name)))
-          (saved? result) (if (not ok)
-                              (values false name)
-                              (do (when old (show-diff old code))
-                                  (if (confirm (if old
-                                                   (.. "Replace tools/" name ".fnl?")
-                                                   (.. "Save tools/" name ".fnl?")))
-                                      (pcall save code name)
-                                      (values :no))))]
+          (ok kind name) (pcall check-code code)
+          path (when ok (artifact-path kind name))
+          old (when ok (read path))
+          (saved? result commands) (if (not ok)
+                                       (values false kind)
+                                       (do (when old (show-diff old code))
+                                           (if (confirm (if old
+                                                            (.. "Replace " path "?")
+                                                            (.. "Save " path "?")))
+                                               (pcall save kind code name)
+                                               (values :no))))]
       (if (= saved? :no)
           (set done? true)
           saved?
-          (do (tset sent name code) ; Claude already knows this version
-              (ui.notice :reload (if old
-                                     (.. name " replaced and loaded · the previous one is at " result)
-                                     (.. "+" name " saved and loaded: ready to use")))
+          (do (tset sent path code) ; Claude already knows this version
+              (ui.notice :reload (.. (if old
+                                         (.. name " replaced and loaded · the previous one is at " result)
+                                         (.. "+" name " saved and loaded: ready to use"))
+                                     (if commands (.. " (" commands ")") "")))
               (set done? true))
           (< tries max-fixes)
           (do (set tries (+ tries 1))
@@ -253,7 +302,7 @@ it, and loads it. Returns the last cost."
 
 (fn session []
   (ui.begin)
-  (ui.header "ñoqui :dev" "tool self-development" (.. "claude · " (or config.claude-model "default")))
+  (ui.header "ñoqui :dev" "tool and snippet self-development" (.. "claude · " (or config.claude-model "default")))
   (ui.guide)
   ;; the guide loads the tools, and reload notices must not land in the
   ;; middle of the "loading…" line

@@ -1,19 +1,26 @@
-;; Snippets: fixed plans stored in snippets.fnl (project root), no planner.
-;;   {:name {:description "text with $arg" :args [:arg ...]
-;;           :steps [[:tool {:param "$arg"}] [:other] [:claude "task"]]}}
+;; Snippets: fixed plans, no planner. One file per snippet in snippets/ (the `!` variant
+;; lives in the same file), defined with `defsnippet` (src/macros.fnl) and hot-reloaded like the
+;; tools (src/hotload.fnl). A file returns {name snippet ...}, each snippet being:
+;;   {:description "text with $arg" :args [:arg ...]
+;;    :steps [[:tool {:param "$arg"}] [:other] [:claude "task"]]}
 ;; Each step depends on the previous one, as in a pipe, unless it carries a third
 ;; element with the steps it depends on: [:claude "task" [1 2 3]] ([] = none).
-;; Reloaded on every use.
-(local fennel (require :fennel))
+(local hotload (require :src.hotload))
 (local context (require :src.context))
 
-(local path "snippets.fnl")
+(local dir "snippets")
+
+(local loader (hotload.make (fn [file] (let [names (icollect [n (pairs file)] n)]
+                                         (table.sort names)
+                                         names))))
 
 (fn load-all []
-  (case (io.open path)
-    nil {}
-    f (do (f:close)
-          (fennel.dofile path))))
+  "All the snippets (name -> snippet), reloading the files that changed."
+  (let [all {}]
+    (each [_ file (ipairs (loader dir))]
+      (each [name snippet (pairs file)]
+        (tset all name snippet)))
+    all))
 
 (fn substitute [x vals]
   "Replaces $arg with its value in all strings of x."
@@ -65,4 +72,4 @@
       (let [s (. all n)]
         (.. (usage n s) (if s.description (.. "  — " s.description) ""))))))
 
-{: expand : list}
+{: expand : list : load-all}

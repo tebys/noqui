@@ -1,6 +1,6 @@
 ;; Macros for the tools: (import-macros {: each-repo} :src.macros)
 ;; Careful: macros are compiled when the tool loads and stay cached; if this file
-;; changes the REPL has to be restarted (hot reload only covers tools/).
+;; changes the REPL has to be restarted (hot reload only covers tools/ and snippets/).
 
 (fn each-repo [[name repo] ...]
   "Iterates over `repo` if given, or over all of config.repo-names, with `name` bound
@@ -61,8 +61,8 @@ path was requested, it fails; when iterating over all, it skips those without on
           (set diag above))))
     (. prev (length b))))
 
-(fn suggestion [key]
-  (let [best (accumulate [b nil _ k (ipairs tool-keys)]
+(fn suggestion [key ?keys]
+  (let [best (accumulate [b nil _ k (ipairs (or ?keys tool-keys))]
                (if (and (<= (distance key k) 2) (or (not b) (< (distance key k) (distance key b)))) k b))]
     (if best (.. " (did you mean :" best "?)") "")))
 
@@ -176,4 +176,108 @@ literal declares it in :name, and (params.x ...) is one of the src.params constr
       (tset out "params" (sequence (table.unpack ps))))
     out))
 
-{: each-repo : each-local-repo : deftool}
+;; defsnippet: defines a snippet (a fixed plan, see src/snippets.fnl) and checks at compile time
+;; what would otherwise only fail when it is run. One file snippets/<name>.fnl holds the snippet
+;; and, optionally, its `!` variant (:bang), which is registered as <name>!:
+;;   (defsnippet pr-desc
+;;     {:description "Write the PR description of $ticket in $repo"
+;;      :args [:ticket :repo]
+;;      :steps [[:branch-diff {:repo "$repo" :ticket "$ticket"}] [:claude "task"]]
+;;      :bang {:description "... and edit it in the PR"     ; :args default to the base ones
+;;             :steps [...]}})
+;; The file may define `(local ...)`s before it (e.g. a prompt shared by both variants).
+;; The :name comes from the symbol, and has to match the file name.
+
+(local snippet-keys ["description" "args" "steps" "bang"])
+(local bang-keys ["description" "args" "steps"])
+
+(fn literal-strings [x out]
+  "Collects the string literals inside the AST `x` (not into lists: those are code)."
+  (if (= (type x) :string)
+      (table.insert out x)
+      (and (= (type x) :table) (not (list? x)) (not (sym? x)))
+      (each [_ v (pairs x)] (literal-strings v out)))
+  out)
+
+(fn check-snippet [name spec keys label]
+  (each [k _ (pairs spec)]
+    (assert-compile (member? keys k)
+                    (.. label ": unknown field :" (tostring k) (suggestion (tostring k) keys)) spec))
+  (assert-compile (= (type (. spec "description")) :string)
+                  (.. label ": :description must be a string") spec)
+  (assert-compile (sequence? (. spec "steps")) (.. label ": :steps is a list of steps") spec)
+  (assert-compile (> (length (. spec "steps")) 0) (.. label ": :steps is empty") spec))
+
+(fn check-steps [label steps args]
+  "Each step is [:tool {args}] or [:claude \"task\"], plus optionally the list of the steps
+(numbers) it depends on. $arg in a string has to be one of :args."
+  (let [declared (collect [_ a (ipairs args)] a true)
+        total (length steps)]
+    (each [i step (ipairs steps)]
+      (assert-compile (and (sequence? step) (= (type (. step 1)) :string))
+                      (.. label ": step " i " is [:tool {args}] or [:claude \"task\"]") step)
+      (let [tool (. step 1)
+            second (. step 2)
+            deps (. step 3)]
+        (if (= tool "claude")
+            (assert-compile (not= second nil) (.. label ": step " i " (:claude) has no task") step)
+            (do
+              (assert-compile (or (= second nil) (and (table? second) (not (sequence? second))))
+                              (.. label ": step " i " (" tool "): the args are a table {:param value}") step)
+              (let [f (io.open (.. "tools/" tool ".fnl"))]
+                (assert-compile (or f (not (io.open "tools"))) ; no tools/ dir here: nothing to compare against
+                                (.. label ": step " i " uses " tool ", but there is no tools/" tool ".fnl") step)
+                (when f (f:close)))
+              ;; the claude tasks are free text: a $ in them is not a reference
+              (each [_ str (ipairs (literal-strings second []))]
+                (each [ref (str:gmatch "%$(%a[%w_%-]*)")]
+                  (assert-compile (. declared ref)
+                                  (.. label ": step " i " uses $" ref ", which is not in :args ("
+                                      (table.concat args ", ") ")") step)))))
+        (when deps
+          (assert-compile (sequence? deps) (.. label ": step " i ": the dependencies are a list of step numbers") step)
+          (each [_ d (ipairs deps)]
+            (assert-compile (and (= (type d) :number) (>= d 1) (<= d total) (not= d i))
+                            (.. label ": step " i " depends on " (tostring d) ", which is not another step (1.." total ")") step)))))))
+
+(fn defsnippet [name spec]
+  (assert-compile (sym? name) "defsnippet: the first argument is the snippet name (a symbol)" name)
+  (assert-compile (table? spec) "defsnippet: the second argument is the table with the fields" spec)
+  (let [snippet (tostring name)
+        file (let [src (ast-source name)]
+               (and src src.filename (src.filename:match "([^/]+)%.fnl$")))
+        args (let [a (. spec "args")]
+               (assert-compile (or (= a nil) (sequence? a)) (.. snippet ": :args is a list of names") spec)
+               (icollect [_ x (ipairs (or a []))]
+                 (do (assert-compile (= (type x) :string) (.. snippet ": the :args are names (:ticket :repo)") spec)
+                     x)))
+        out {}]
+    (when file
+      (assert-compile (= file snippet)
+                      (.. "the snippet is called " snippet " but the file is " file ".fnl: they have to match") name))
+    (assert-compile (not (snippet:find "!" 1 true))
+                    (.. snippet ": no ! in the name: the variant is declared with :bang in the same file") name)
+    (check-snippet snippet spec snippet-keys snippet)
+    (check-steps snippet (. spec "steps") args)
+    (let [base {}]
+      (each [k v (pairs spec)]
+        (when (not= k "bang") (tset base k v)))
+      (tset out snippet base))
+    (let [bang (. spec "bang")]
+      (when bang
+        (assert-compile (table? bang) (.. snippet ": :bang is a table {:description .. :steps ..}") spec)
+        (let [label (.. snippet "!")]
+          (check-snippet snippet bang bang-keys label)
+          (let [bang-args (let [a (. bang "args")]
+                            (if a
+                                (do (assert-compile (sequence? a) (.. label ": :args is a list of names") bang)
+                                    (icollect [_ x (ipairs a)] x))
+                                args))
+                variant {}]
+            (check-steps label (. bang "steps") bang-args)
+            (each [k v (pairs bang)] (tset variant k v))
+            (when (not (. variant "args")) (tset variant "args" (. spec "args")))
+            (tset out label variant)))))
+    out))
+
+{: each-repo : each-local-repo : deftool : defsnippet}

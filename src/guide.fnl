@@ -1,7 +1,8 @@
-;; The guide :dev starts with: how to build a ñoqui tool. The format and the
+;; The guide :dev starts with: how to build a ñoqui tool or snippet. The formats and the
 ;; lessons are written here (next to the code that defines them); the current
-;; tools and the examples are read from tools/ every time.
+;; tools, snippets and the examples are read from tools/ and snippets/ every time.
 (local tools (require :src.tools))
+(local snippets (require :src.snippets))
 (local {: read} (require :src.files))
 
 (local format "
@@ -95,12 +96,51 @@ Fennel lessons (mistakes that already happened):
 - Lists for the model and for chaining go as JSON (`json.encode`).
 - GitHub: `gh` with `config.user`. Tools that only read are the safest;
   if one writes something, it should validate its input and not overwrite things without a backup.
+
+# What a ñoqui snippet looks like
+
+A snippet is a fixed plan: a named list of steps that runs as is, without the planner (`:name arg1 arg2`
+in the REPL; `:snippets` lists them). A file `snippets/<name>.fnl` (Fennel) with a single
+`defsnippet` form; it reloads by itself, like the tools. The `!` variant (the one that also writes
+something, e.g. `:pr-desc!`) lives in the same file, under `:bang`:
+
+    (import-macros {: defsnippet} :src.macros)
+    (defsnippet pr-desc          ; the name: same as the file name, in kebab-case, no `!`
+      {:description \"Write the PR description of $ticket in $repo\"
+       :args [:ticket :repo]
+       :steps [[:branch-diff {:repo \"$repo\" :ticket \"$ticket\"}]
+               [:claude \"Write the PR description in English.\"]]
+       :bang {:description \"... and edit it in the PR\"   ; registered as :pr-desc!
+              :steps [...]}})                              ; :args default to the base ones
+
+The file may have `(local ...)`s before the form (e.g. a long prompt shared by both variants).
+`defsnippet` checks at compile time: unknown or misspelled fields, a name that differs from the file,
+steps that use a tool that does not exist (there is no tools/<name>.fnl), `$arg` in a tool step's
+args that is not in `:args`, and dependencies that are not other steps. Fields:
+
+- `:description` (string, required): what it does; `$arg` is replaced. It is what `:snippets` shows.
+- `:args`: the names of the arguments, in the order the user types them (`:name <ticket> <repo>`).
+  In worktree mode (`:wt`) `:ticket` and `:repo` can be omitted: they come from the mode.
+- `:steps` (required): a list; each step is `[:tool {:param \"value\"}]` or `[:claude \"task\"]`.
+  - A tool step runs the tool (it has to exist in tools/) with those params; `{}` or nothing for none.
+  - `[:claude \"task\"]` hands the task to Claude, together with the output of the steps it depends on.
+  - `$arg` is replaced in every string, also in the :claude tasks (an unknown `$word` is left as is).
+  - By default each step depends on the previous one, like a pipe. To change that, add a third
+    element with the step numbers it depends on: `[:claude \"task\" [1 2 3]]`; `[]` = none (independent
+    steps, they gather data for a later one).
+- `:bang` (optional): `{:description .. :steps ..}` and optionally `:args`; the variant, usually the base
+  plus a last step that writes (pr-edit-description, commit-staged, pr-append-description, ...).
+
+A snippet can only use tools that already exist: if one is missing, propose the tool first (its own
+file), and the snippet afterwards. The tools that write things are for the `:bang` variant; the
+base snippet only shows the result.
 ")
 
 (local examples [:open-prs :count :append-file])
+(local snippet-examples [:ci :testing]) ; the simplest, and one with dependencies, a local and :bang
 
-(fn source [name]
-  (read (.. "tools/" name ".fnl")))
+(fn source [dir name]
+  (read (.. dir "/" name ".fnl")))
 
 (fn build []
   (let [available (tools.load-all "tools")]
@@ -109,8 +149,15 @@ Fennel lessons (mistakes that already happened):
         (table.concat (icollect [_ t (ipairs available)] (tools.describe t)) "\n")
         "\n\n# Complete examples\n"
         (table.concat (icollect [_ name (ipairs examples)]
-                        (case (source name)
+                        (case (source "tools" name)
                           code (.. "\n## tools/" name ".fnl\n```fennel\n" code "```\n")))
+                      "")
+        "\n# Snippets that already exist\n\n"
+        (table.concat (icollect [_ l (ipairs (snippets.list))] (.. "- " l)) "\n")
+        "\n\n# Complete snippet examples\n"
+        (table.concat (icollect [_ name (ipairs snippet-examples)]
+                        (case (source "snippets" name)
+                          code (.. "\n## snippets/" name ".fnl\n```fennel\n" code "```\n")))
                       ""))))
 
 {: build}

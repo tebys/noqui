@@ -12,24 +12,25 @@ Claude Code session (see [COSTS.org](COSTS.org)).
 ## Self-development (`:dev`)
 
 The point of ñoqui is that it extends itself. Type `:dev` (optionally `:dev opus`) and describe the tool you
-need; a dedicated Claude session, primed with a guide to ñoqui's tool format, writes it for you.
+need; a dedicated Claude session, primed with a guide to ñoqui's tool and snippet formats, writes it for you.
 
 ```
 > :dev
 dev> a tool that lists my open PRs with failing CI
+dev> a snippet :prs-ci that lists my open PRs and the CI of each one
 ```
 
 - Claude only proposes code. ñoqui compiles it and, if it fails, feeds the error back (up to 3 -configurable- automatic fixes).
 - For a modification you see a diff and confirm with `y` before anything is written.
-- The tool is saved to `tools/` and hot-loaded at once, so it is usable right away. If it fails to load, the change is rolled back; replaced versions are backed up in `/tmp`.
-- Name an existing tool in your message to have its code attached, so Claude can edit it.
+- A tool is saved to `tools/` and a snippet to `snippets/` (see below); both are hot-loaded at once, so it is usable right away. If it fails to load, the change is rolled back; replaced versions are backed up in `/tmp`.
+- Name an existing tool (or a snippet as `:name`) in your message to have its code attached, so Claude can edit it.
 - `:fin` goes back to normal mode.
 
 ## Features
 
 - `a -> b -> c` chains steps; each step declares what it depends on.
 - Tools are single files in `tools/`, defined with `deftool` (compile-time checks) and hot-reloaded, written by hand or with `:dev`.
-- Snippets (`snippets.fnl`): fixed plans that skip the planner.
+- Snippets: fixed plans that skip the planner, one file per snippet in `snippets/`, defined with `defsnippet` (compile-time checks) and hot-reloaded like the tools. The `!` variant (e.g. `:pr-desc!`, which also writes to the PR) lives in the same file, under `:bang`. Written by hand or with `:dev`; `:snippets` lists them.
 - Worktree mode (`:wt repo ticket`), launching a terminal or Claude in it, and background CI `:watch`.
 
 ## Requirements

@@ -1,52 +1,14 @@
-(local fennel (require :fennel))
-(local uv (require :luv))
-(local ui (require :src.ui))
+(local hotload (require :src.hotload))
 (local context (require :src.context))
 (local utils (require :src.utils))
 
-(fn fs-iter [dir]
-  "Iterator over the names in `dir` (thin layer over luv, which also runs on macOS)."
-  (let [h (uv.fs_scandir dir)]
-    (when h (fn [] (uv.fs_scandir_next h)))))
-
-;; path -> {: mtime : tool}. Only what changed since the last time is recompiled.
-(local cache {})
+(local loader (hotload.make (fn [tool] [tool.name])))
 
 (fn load-all [dir]
-  "Loads the tools from `dir`, reloading the ones that changed and reporting what happened.
-If a tool does not compile the previous version keeps being used."
-  (let [first? (= (next cache) nil)
-        seen {}
-        loaded []
-        files (icollect [name (or (fs-iter dir) (fn [] nil))]
-                (when (name:match "%.fnl$")
-                  (let [path (.. dir "/" name)
-                        st (uv.fs_stat path)]
-                    (when (and st (= st.type :file))
-                      {:path path :mtime st.mtime.sec}))))]
-    (each [_ f (ipairs files)]
-      (tset seen f.path true)
-      (let [cached (. cache f.path)]
-        (when (or (not cached) (not= cached.mtime f.mtime))
-          (let [(ok tool) (pcall fennel.dofile f.path)]
-            (if ok
-                (do (tset cache f.path {:mtime f.mtime :tool tool})
-                    (table.insert loaded (.. (if (or first? cached) "" "+") tool.name)))
-                (let [(msg) (string.gsub (let [m (tostring tool)] (or (m:match "^(.-)\n?stack traceback:") m)) "\27%[[%d;]*m" "")]
-                  (ui.notice :error (.. (pick-values 1 (msg:gsub "%s+$" ""))
-                                        (if cached "  (still using the previous version)" "")))
-                    ;; the mtime is saved so the error is not repeated until you touch it again
-                    (when cached (set cached.mtime f.mtime))))))))
-    (each [path c (pairs cache)]
-      (when (not (. seen path))
-        (tset cache path nil)
-        (ui.notice :error (.. c.tool.name " removed"))))
-    ;; the first load does not report: the REPL banner already shows the tools
-    (when (and (next loaded) (not first?))
-      (ui.notice :reload (table.concat loaded ", ")))
-    ;; sorted: the order of `pairs` changes between runs, and with it the planner prompt
-    (doto (icollect [_ c (pairs cache)] c.tool)
-      (table.sort #(< $1.name $2.name)))))
+  "Loads the tools from `dir` (hot reload: see src.hotload), sorted by name: the order
+of `pairs` changes between runs, and with it the planner prompt."
+  (doto (loader dir)
+    (table.sort #(< $1.name $2.name))))
 
 (fn describe [tool]
   "Description of the tool for the planner prompt."

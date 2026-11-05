@@ -106,8 +106,9 @@
     (print (ui.c :faint "└"))))
 
 (fn repl-blocking []
-  ;; check for changes in the tools every time the prompt comes back
+  ;; check for changes in the tools and snippets every time the prompt comes back
   (tools.load-all "tools")
+  (snippets.load-all)
   (ui.prompt (context.label))
   (let [line (io.read :l)]
     (when (and line (not= line ":q"))
@@ -154,8 +155,9 @@ modes that do io.read, like :dev, read it directly) and the notices wait."
                              (handle line)
                              (stdin:set_blocking false)))))
                    (when (not done?)
-                     ;; check for changes in the tools every time the prompt comes back
+                     ;; check for changes in the tools and snippets every time the prompt comes back
                      (tools.load-all "tools")
+                     (snippets.load-all)
                      (ui.prompt (context.label))
                      (hud.resume)
                      (stdin:read_start on-read)))))))
