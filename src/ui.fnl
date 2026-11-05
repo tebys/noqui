@@ -43,8 +43,8 @@
 
 ;; ── screen state ──
 
-;; A margin is left free on the right for the little boxes (src/hud.fnl): all the
-;; content fits the width left to their left.
+;; The content takes the whole width of the terminal: the little boxes (src/hud.fnl)
+;; are drawn over it, and `gutter` is only the maximum width of one of them.
 (local gutter 46)
 (local min-width 60)
 (var width 80)
@@ -54,7 +54,7 @@
   (let [f (io.popen "(stty size < /dev/tty) 2>/dev/null")
         cols (tonumber (or (: (f:read :a) :match "%d+%s+(%d+)") ""))]
     (f:close)
-    (set width (math.min (or cols 80) (math.max min-width (math.min 110 (- (or cols 80) gutter)))))))
+    (set width (math.max min-width (or cols 80)))))
 
 (fn now []
   "Seconds with decimals (os.time only has whole seconds)."
