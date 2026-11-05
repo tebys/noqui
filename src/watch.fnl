@@ -315,8 +315,9 @@ back to the end of the log when there are none."
           (table.concat out "\n")))))
 
 (fn save-log [w id text]
-  "Writes the whole log to /tmp (Claude may read it there); returns the path or nil."
-  (let [path (.. "/tmp/noqui-watch-" id ".log")
+  "Writes the whole log to /tmp (the session is opened with /tmp as an extra directory so
+Claude can read it). Returns the path or nil."
+  (let [path (.. "/tmp/noqui-ci-" id ".log")
         f (io.open path "w")]
     (when f
       (f:write text)
