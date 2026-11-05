@@ -154,8 +154,12 @@ a single Claude call (one call fewer)."
 
 (fn claude [prompt step results by-id json? on-chunk]
   "Returns (values answer cost)."
-  (let [data (icollect [_ d (ipairs step.deps)]
-               (.. "Result of " (source (. by-id d)) "\n" (tostring (. results d))))
+  (let [;; demo mode: if the answer is only displayed (not processed by a tool), Claude gets
+        ;; the data already altered, so what it writes comes out altered
+        alter? (and (demo.on?) (not json?))
+        alter #(if alter? (demo.out $1) $1)
+        data (icollect [_ d (ipairs step.deps)]
+               (.. "Result of " (source (. by-id d)) "\n" (alter (tostring (. results d)))))
         text (.. "Original user request: " prompt
                  "\n\nYour task: " step.task
                  (if (next data)
@@ -165,7 +169,7 @@ a single Claude call (one call fewer)."
                              " Reply briefly.")
                          "\n\n" (table.concat data "\n\n"))
                      "\n\nYou have no tools available (you cannot run commands or search for anything): answer with what you know, briefly."))
-        (answer cost) (acp.prompt text on-chunk)]
+        (answer cost) (acp.prompt (if alter? (demo.mask text) text) on-chunk)]
     (values (if json? (as-json answer) answer) cost)))
 
 (fn preview [out]
