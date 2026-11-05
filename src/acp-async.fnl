@@ -12,7 +12,7 @@
 (local object {:__jsontype :object}) ; so that dkjson encodes {} and not []
 
 (fn open [opts done]
-  "Brings up an agent and opens a session. opts: {:cwd :model :policy fn(toolCall)->bool}.
+  "Brings up an agent and opens a session. opts: {:cwd :dirs (extra readable directories) :model :policy fn(toolCall)->bool}.
 Calls (done err client); the client has `ask` and `close`:
   (client.ask text on-chunk cb)   cb receives (err response cost)
   (client.close)"
@@ -113,7 +113,7 @@ Calls (done err client); the client has `ask` and `close`:
                  (fn [err]
                    (if err
                        (fail err)
-                       (rpc :session/new {:cwd (or opts.cwd (os.getenv "PWD")) :mcpServers []}
+                       (rpc :session/new {:cwd (or opts.cwd (os.getenv "PWD")) :mcpServers [] :additionalDirectories (or opts.dirs [])}
                             (fn [err res]
                               (if err (fail err) (pick-model res))))))))))))
 

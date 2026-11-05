@@ -263,7 +263,7 @@ with :watch! it is the watch who commits, pushes and goes on watching."
                          ok))]
       (if w.client
           (ask w.client)
-          (acp-async.open {:cwd c.path :model claude-model :policy permission}
+          (acp-async.open {:cwd c.path :dirs ["/tmp"] :model claude-model :policy permission}
                           (safe w (fn [err client]
                                        (if err
                                            (finish w (.. "could not open claude: " err))
