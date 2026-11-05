@@ -6,6 +6,7 @@
 (local config (require :config))
 (local context (require :src.context))
 (local utils (require :src.utils))
+(local demo (require :src.demo))
 
 (fn no-tool? [name]
   (or (= name nil) (= name "") (= name "null")))
@@ -248,7 +249,7 @@ steps run as-is, and if they do not validate it is an error (not sent to Claude)
               (set stats.tools (+ stats.tools 1))
               (ui.finish (if ok :ok :fail) s.tool.name detail (- (ui.now) ts))
               (if ok
-                  (ui.body (show s out) style)
+                  (ui.body (show s (demo.out out)) style)
                   (do (set stats.fail (+ stats.fail 1))
                       (ui.body [(tostring out)] :error)))
               (tset results s.id (if ok out (.. "ERROR: " (tostring out)))))
@@ -262,7 +263,7 @@ steps run as-is, and if they do not validate it is an error (not sent to Claude)
               (when done (done))
               (when json? (ui.finish (if ok :ok :fail) "claude" s.task (- (ui.now) ts)))
               (if ok
-                  (when json? (ui.body (preview out) style))
+                  (when json? (ui.body (preview (demo.out out)) style))
                   (do (set stats.fail (+ stats.fail 1))
                       (ui.body [(tostring out)] :error)
                       (acp.stop))) ; in case it failed midway through a call

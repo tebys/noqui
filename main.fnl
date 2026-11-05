@@ -16,6 +16,7 @@
 (local sh (require :src.sh))
 (local agents (require :src.agents))
 (local hud (require :src.hud))
+(local demo (require :src.demo))
 (local uv (require :luv))
 
 (fn run-snippet [line]
@@ -77,6 +78,9 @@
                               (open-claude)
                               (= prompt ":tools")
                               (list-tools)
+                              (= prompt ":demo")
+                              (ui.notice :info (if (demo.toggle) "demo mode on: keys, titles and descriptions are altered on screen"
+                                                   "demo mode off"))
                               (or (prompt:match "^:watch!?$") (prompt:match "^:watch!?%s"))
                               (let [(ok res) (pcall watch.run (prompt:match "^:watch!?%s+(%S+)") (prompt:match "^:watch!"))]
                                 (if ok
@@ -101,7 +105,7 @@
     (ui.guide)
     (each [_ line (ipairs ["a -> b -> c to chain steps · :q to quit"
                            ":snippets · :tools · :dev [model] · :wt repo ticket · :fin"
-                           ":terminal · :claude · :watch[!] [min|stop]"])]
+                           ":terminal · :claude · :watch[!] [min|stop] · :demo"])]
       (print (.. (ui.c :faint "│  ") (ui.c :faint line))))
     (print (ui.c :faint "└"))))
 

@@ -4,6 +4,7 @@
 ;; is replaced (\r) by the final symbol when it finishes.
 
 (local highlight (require :src.highlight))
+(local demo (require :src.demo))
 
 (local reset "\27[0m")
 (local bold "\27[1m")
@@ -76,7 +77,7 @@
 (fn header [title subtitle right]
   (let [right (or right "")
         room (- width 3 (vwidth title) 5 (vwidth right) 2)
-        sub (truncate (one-line subtitle) (math.max 10 room))
+        sub (truncate (one-line (demo.mask subtitle)) (math.max 10 room))
         gap (math.max 2 (- width 3 (vwidth title) 5 (vwidth sub) (vwidth right)))]
     (print (.. (c :faint "┌  ") (rgb th.mauve) "⬢ " bold title reset
                (c :faint "  ·  ") (c :subtext sub) (string.rep " " gap) (c :faint right)))))
@@ -90,7 +91,7 @@
   (let [[sym color] (. symbols state)
         right (or right "")
         room (math.max 8 (- width 3 name-width (vwidth right) 2))
-        detail (truncate (one-line (or detail "")) room)
+        detail (truncate (one-line (demo.mask (or detail ""))) room)
         gap (math.max 2 (- width 3 name-width (vwidth detail) (vwidth right)))]
     (.. (c color sym) "  "
         (c (if (= state :ok) :subtext :text) (pad name name-width))
@@ -110,7 +111,7 @@ answer, highlighted), :data (intermediate results, dimmed) or :error."
   (let [color (case style :final :text :error :red _ :subtext)
         max 8]
     (each [i line (ipairs lines) &until (> i max)]
-      (print (.. body-prefix (c color (truncate line (- width 6))))))
+      (print (.. body-prefix (c color (truncate (demo.mask line) (- width 6))))))
     (when (> (length lines) max)
       (print (.. body-prefix (c :faint (.. "… and " (- (length lines) max) " more")))))))
 
@@ -166,7 +167,7 @@ Returns (values write done)."
           (when (and (> col 0) (> (+ col w) max))
             (io.write reset "\n" body-prefix (style-code))
             (set col 0))
-          (io.write (render-word word))
+          (io.write (render-word (demo.mask word)))
           (set col (+ col w))
           (set word ""))))
     (fn text-char [ch]

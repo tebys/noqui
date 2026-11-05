@@ -32,6 +32,7 @@ dev> a snippet :prs-ci that lists my open PRs and the CI of each one
 - Tools are single files in `tools/`, defined with `deftool` (compile-time checks) and hot-reloaded, written by hand or with `:dev`.
 - Snippets: fixed plans that skip the planner, one file per snippet in `snippets/`, defined with `defsnippet` (compile-time checks) and hot-reloaded like the tools. The `!` variant (e.g. `:pr-desc!`, which also writes to the PR) lives in the same file, under `:bang`. Written by hand or with `:dev`; `:snippets` lists them.
 - Worktree mode (`:wt repo ticket`), launching a terminal or Claude in it, and background CI `:watch`.
+- Demo mode (`:demo`, or `NOQUI_DEMO=1`) for recording videos: ticket keys, titles and descriptions are altered on screen only; the real data is never touched.
 
 ## Requirements
 
