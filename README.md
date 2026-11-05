@@ -34,6 +34,10 @@ dev> a snippet :prs-ci that lists my open PRs and the CI of each one
 - Worktree mode (`:wt repo ticket`), launching a terminal or Claude in it, and background CI `:watch`.
 - Demo mode (`:demo`, or `NOQUI_DEMO=1`) for recording videos: ticket keys, titles, descriptions and people names are altered on screen only; the real data is never touched.
 
+## Demo
+
+https://github.com/user-attachments/assets/836cf938-41cb-411a-ba8e-020908836bd3
+
 ## Requirements
 
 - Fennel, Lua (5.4+), LuaRocks, plus the rocks `dkjson` and `luv`
