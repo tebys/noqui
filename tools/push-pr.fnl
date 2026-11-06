@@ -15,6 +15,12 @@
         (let [wt (worktrees.find repo ticket)
               _ (assert wt (.. "no worktree for " ticket " in " repo))
               branch (or branch wt.branch)
+              (ahead _) (sh.run (.. "cd " (sh.quote wt.path)
+                                    " && git rev-list --count origin/develop.." (sh.quote branch)))
+              dirty (sh.run (.. "cd " (sh.quote wt.path) " && git status --porcelain"))
+              _ (assert (not= (tonumber (ahead:match "%d+")) 0)
+                        (.. "no commits ahead of origin/develop in " branch
+                            (if (dirty:match "%S") ": there are uncommitted changes, commit them first" "")))
               (push-out push-code) (sh.run (.. "cd " (sh.quote wt.path)
                                                " && git push -u origin " (sh.quote branch)))
               _ (assert (= push-code 0) (.. "push failed: " push-out))
