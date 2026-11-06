@@ -7,7 +7,7 @@
  ;; :text: accepts any text, the previous step does not need to return JSON
  :input :text
  :params [{:name :path :type :string :required true
-           :doc "path relative to the project, e.g. COSTS.org"}]
+           :doc "path relative to the project (e.g. COSTS.org) or under /tmp/"}]
  :run (fn [{: path} inputs]
         (let [path (files.check-path path)
               text (table.concat inputs "\n")

@@ -5,7 +5,7 @@
  {:short "reads a project file"
  :description "Returns the contents of a project file."
  :params [{:name :path :type :string :required true
-           :doc "path relative to the project, e.g. COSTS.org"}]
+           :doc "path relative to the project (e.g. COSTS.org) or under /tmp/"}]
  :run (fn [{: path}]
         (let [f (assert (io.open (files.check-path path)) (.. "does not exist: " path))]
           (with-open [f f]

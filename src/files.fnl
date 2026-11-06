@@ -1,8 +1,9 @@
 (fn check-path [path]
-  "File tools only touch files inside the project."
-  (when (or (path:match "^/") (path:match "^~") (path:match "%.%.")
+  "File tools only touch files inside the project, or under /tmp."
+  (when (or (and (path:match "^/") (not (path:match "^/tmp/")))
+            (path:match "^~") (path:match "%.%.")
             (not (path:match "%S")))
-    (error (.. "only files inside the project (relative path, no ..): " path) 0))
+    (error (.. "only files inside the project (relative path, no ..) or under /tmp/: " path) 0))
   path)
 
 (fn open [path mode]

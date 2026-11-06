@@ -70,7 +70,7 @@ Available modules (`(local x (require :src.x))`):
 - `src.jira`: `(request {: path : method : body : query})` -> decoded JSON (fails if status >= 300),
   `(normalize-key ticket)`, `(browse-url key)`. Credentials come from JIRA_EMAIL / JIRA_TOKEN.
 - `src.files`: `(check-path path)`, for tools that touch files: only
-  relative paths inside the project.
+  relative paths inside the project, or absolute paths under /tmp/.
 - `src.ollama`: `(chat messages schema)` -> JSON from the local model, forced to `schema`.
   Ask for numbers as text and convert them in code (with :number the 8b read
   \"$0.2389\" as 2389).
