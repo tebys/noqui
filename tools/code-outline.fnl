@@ -130,7 +130,7 @@ shift). Returns the code and the templates as definitions."
   (let [header (.. f.status " " f.path (if f.from (.. " (was " f.from ")") "")
                    " (+" f.added " −" f.deleted ")")
         ext (f.path:match "%.(%w+)$")]
-    (if (or f.binary (not (. parseable ext)))
+    (if (or f.binary (not d.worktree) (not (. parseable ext)))
         [header]
         (let [new-src (when (not= f.status "D") (git-show d.worktree "HEAD" f.path))
               old-src (when (not= f.status "A") (git-show d.worktree d.base (or f.from f.path)))
@@ -188,7 +188,7 @@ shift). Returns the code and the templates as definitions."
  :params []
  :run (fn [_ inputs]
         (let [d (json.decode (. inputs 1))
-              lines [(.. "branch: " d.branch " (" d.repo ")")
+              lines [(.. "branch: " (or d.branch (.. "PR #" d.pr)) " (" d.repo ")")
                      "commits:"]]
           (each [_ c (ipairs d.commits)]
             (table.insert lines (.. "- " c)))
