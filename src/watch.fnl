@@ -254,7 +254,11 @@ with :watch! it is the watch who commits, pushes and goes on watching."
                                       (set w.cost (+ w.cost (or spent 0)))
                                       (wlog w (.. "claude: " answer))
                                       (if (answer:match "^%s*NO CHANGES")
-                                          (finish w "Claude found nothing to fix in the code")
+                                          (if (> w.pending 0)
+                                              ;; a gate job can fail early while the rest still runs: it is not a verdict
+                                              (do (set w.attempts (- w.attempts 1))
+                                                  (schedule w (.. "nothing to fix yet, " w.pending " check(s) pending")))
+                                              (finish w "Claude found nothing to fix in the code"))
                                           (after-claude w answer))))))))
           permission (fn [tool-call]
                        (let [ok (allowed? tool-call c.path)]
@@ -357,6 +361,7 @@ available yet it waits for the next check without using up an attempt."
   (when (dirty? w.c.path)
     (error "the worktree was left with uncommitted changes" 0))
   (let [attempt (+ w.attempts 1)]
+    (set w.pending pending)
     (set-phase w :blue (.. "reading logs " attempt "/" max-attempts))
     (fetch-logs w failed (> pending 0)
                 (fn [logs]
@@ -382,9 +387,11 @@ available yet it waits for the next check without using up an attempt."
               (finish w (if waiting-approval? "CI green, approval pending" "CI green"))
               ;; do not wait for the pending checks: the jobs that already failed have logs
               (> (length failed) 0)
-              (if (>= w.attempts max-attempts)
-                  (finish w (.. "still failing after " max-attempts " attempts"))
-                  (fix w failed pending summary))
+              (if (< w.attempts max-attempts)
+                  (fix w failed pending summary)
+                  (> pending 0)
+                  (schedule w (.. "CI " summary))
+                  (finish w (.. "still failing after " max-attempts " attempts")))
               (schedule w (.. "CI " summary)))))))
 
 (fn check [w]
@@ -425,7 +432,7 @@ commits); `:watch! [minutes]` also commits and pushes; `:watch stop` removes it.
             (error (.. "there is already a watch for " c.ticket " (:watch stop to remove it)") 0))
           (when (dirty? c.path)
             (error (.. "the worktree has uncommitted changes in tracked files (" c.path "): commit or stash them before :watch") 0))
-          (let [w {: c : minutes :auto? ?auto :attempts 0 :errors 0 :cost 0 :color :blue :label "starting"
+          (let [w {: c : minutes :auto? ?auto :attempts 0 :pending 0 :errors 0 :cost 0 :color :blue :label "starting"
                    :timer (uv.new_timer) :check check
                    :log-path (.. "/tmp/noqui-watch-" c.repo "-" c.ticket ".log")}]
             (table.insert watches w)
