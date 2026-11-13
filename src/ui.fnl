@@ -118,15 +118,15 @@ answer, highlighted), :data (intermediate results, dimmed) or :error."
 (local token-colors {:comment :faint :string :green :keyword :blue :number :peach
                      :special :mauve :delim :subtext :symbol :text})
 
-(fn code-line [line lang state]
+(fn code-line [line lang state ?indent]
   "A line of a code block: Fennel highlighted, the rest in orange.
 The COMPLETE line is tokenized and only then cut to the width: if it were cut
 before, a cut string never closes and everything that follows comes out green."
-  (let [room (- width 6)]
-    (if (= lang "fennel")
+  (let [room (- width 6 (or ?indent 0))]
+    (if (highlight.tokens-for lang)
         (let [out []]
           (var used 0)
-          (each [_ [cat text] (ipairs (highlight.tokens line state))]
+          (each [_ [cat text] (ipairs ((highlight.tokens-for lang) line state))]
             (when (< used room)
               (let [fits (truncate text (- room used))]
                 (set used (+ used (vwidth fits)))
@@ -244,4 +244,4 @@ Returns (values write done)."
   (.. bold (rgb th.text) text reset))
 
 {: c : pad : vwidth : gutter : truncate : begin : now : secs : guide : header : start : finish
- : body : stream : footer : notice : prompt :bold emphasize}
+ : body : code-line : stream : footer : notice : prompt :bold emphasize}
