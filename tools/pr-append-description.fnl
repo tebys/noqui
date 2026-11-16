@@ -37,10 +37,7 @@
  :input :text
  :worktree true
  :run (fn [{: repo : ticket} inputs]
-        (let [text (gh.clean-body (table.concat inputs "\n"))]
-          ;; never write nothing or a previous step's error into a PR
-          (assert (and (text:match "%S") (not (text:match "^ERROR:")))
-                  "the incoming text is empty or is an error: not editing the PR")
+        (let [text (gh.incoming-text inputs "text")]
           ;; if Claude repeated the heading, it is not duplicated
           (let [text (pick-values 1 (text:gsub "^##%s+Testing Instructions%s*\n+" ""))]
             (gh.edit-body repo ticket

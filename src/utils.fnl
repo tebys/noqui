@@ -1,3 +1,5 @@
+(local json (require :dkjson))
+
 (fn find [xs pred]
   "The first element of `xs` that satisfies `pred`, or nil."
   (accumulate [found nil _ x (ipairs xs)]
@@ -31,4 +33,26 @@
   "The non-empty lines of `s`."
   (icollect [line (s:gmatch "[^\n]+")] line))
 
-{: find : find-index : any? : includes? : some : trim : lines}
+(fn decode-lists [inputs]
+  "The elements of all the JSON lists in `inputs` (the outputs of the previous steps), in
+order. Raises if one of them is not a list."
+  (let [items []]
+    (each [_ input (ipairs inputs)]
+      (let [list (json.decode input)]
+        (assert (= (type list) :table) (.. "not a list: " input))
+        (each [_ x (ipairs list)]
+          (table.insert items x))))
+    items))
+
+(fn show-list [out {: empty : what : line}]
+  "Lines for the `:show` of a tool that returns a JSON list: `empty` if there are no elements,
+otherwise \"N<what>\" and one `(line item)` for each."
+  (let [items (json.decode out)]
+    (if (= (length items) 0)
+        [empty]
+        (let [lines [(.. (length items) what)]]
+          (each [_ item (ipairs items)]
+            (table.insert lines (line item)))
+          lines))))
+
+{: find : find-index : any? : includes? : some : trim : lines : decode-lists : show-list}

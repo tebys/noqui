@@ -10,10 +10,7 @@
  :input :text
  :worktree true
  :run (fn [{: repo : ticket} inputs]
-        (let [body (gh.clean-body (table.concat inputs "\n"))]
-          ;; never overwrite a PR with nothing or with a previous step's error
-          (assert (and (body:match "%S") (not (body:match "^ERROR:")))
-                  "the incoming description is empty or is an error: not editing the PR")
+        (let [body (gh.incoming-text inputs "description")]
           (gh.edit-body repo ticket (fn [] body)
                         {:done "description updated" :previous "previous"})))
  :show (fn [out]

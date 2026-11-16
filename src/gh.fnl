@@ -15,6 +15,14 @@
   (let [text (: (text:gsub "^%s+" "") :gsub "%s+$" "")]
     (or (text:match "^```%w*\n(.-)\n```$") text)))
 
+(fn incoming-text [inputs what]
+  "The text the previous steps sent (`what`: how the error calls it), clean. Never write nothing
+or a previous step's error into a PR: raises if it is empty or starts with ERROR:."
+  (let [text (clean-body (table.concat inputs "\n"))]
+    (assert (and (text:match "%S") (not (text:match "^ERROR:")))
+            (.. "the incoming " what " is empty or is an error: not editing the PR"))
+    text))
+
 (fn edit-body [repo ticket make-body {: done : previous}]
   "Replaces the description of the PR of the ticket's branch with `(make-body pr)`, where
 `pr` is {:number :url :body :state}. First it saves the previous description in /tmp, because
@@ -45,4 +53,4 @@ everything except the edit. `done` and `previous` are the labels of the result."
             (.. done ": " pr.url "\n"
                 previous ": " backup)))))
 
-{: run : clean-body : edit-body}
+{: run : clean-body : incoming-text : edit-body}

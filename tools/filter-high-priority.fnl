@@ -1,5 +1,6 @@
 (import-macros {: deftool} :src.macros)
 (local json (require :dkjson))
+(local utils (require :src.utils))
 
 (fn wanted? [priority level]
   (let [p (if (= (type priority) :string) (priority:lower) "")]
@@ -16,21 +17,9 @@
   :params [{:name :level :type :string :required false :enum [:high-and-above :high]
             :doc "high-and-above (default) keeps High and Highest; high keeps only High"}]
   :run (fn [{: level} inputs]
-         (let [items []]
-           (each [_ input (ipairs inputs)]
-             (let [list (json.decode input)]
-               (assert (= (type list) :table) (.. "not a list: " input))
-               (each [_ t (ipairs list)]
-                 (when (wanted? t.priority level)
-                   (table.insert items t)))))
-           (json.encode items)))
+         (json.encode (icollect [_ t (ipairs (utils.decode-lists inputs))]
+                        (when (wanted? t.priority level) t))))
   :show (fn [out]
-          (let [items (json.decode out)]
-            (if (= (length items) 0)
-                ["no high priority tickets"]
-                (let [lines [(.. (length items) " high priority tickets")]]
-                  (each [_ t (ipairs items)]
-                    (table.insert lines
-                                  (string.format "%-12s [%s] %s" t.key
-                                                 (or t.priority "?") t.title)))
-                  lines))))})
+          (utils.show-list out {:empty "no high priority tickets"
+                                :what " high priority tickets"
+                                :line (fn [t] (string.format "%-12s [%s] %s" t.key (or t.priority "?") t.title))}))})

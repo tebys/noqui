@@ -1,5 +1,6 @@
 (import-macros {: deftool} :src.macros)
 (local json (require :dkjson))
+(local utils (require :src.utils))
 
 ;; days since 1970-01-01 (proleptic Gregorian calendar)
 (fn days-from-civil [y m d]
@@ -33,29 +34,20 @@
   :params [{:name :order :type :string :required false :enum [:oldest :newest]
             :doc "oldest (default) puts the oldest tickets first; newest puts the newest first"}]
   :run (fn [{: order} inputs]
-         (let [items []]
-           (each [_ input (ipairs inputs)]
-             (let [list (json.decode input)]
-               (assert (= (type list) :table) (.. "not a list: " input))
-               (each [_ t (ipairs list)]
-                 (table.insert items {:t t :secs (created-seconds t.created)}))))
-         (let [newest? (= order :newest)]
+         (let [items (icollect [_ t (ipairs (utils.decode-lists inputs))]
+                       {:t t :secs (created-seconds t.created)})
+               newest? (= order :newest)]
            (table.sort items
                        (fn [a b]
                          (if (and a.secs b.secs (not= a.secs b.secs))
                              (if newest? (> a.secs b.secs) (< a.secs b.secs))
                              (and a.secs (not b.secs)) true
                              (and b.secs (not a.secs)) false
-                             (< (tostring a.t.key) (tostring b.t.key))))))
+                             (< (tostring a.t.key) (tostring b.t.key)))))
            (json.encode (icollect [_ x (ipairs items)] x.t))))
   :show (fn [out]
-          (let [items (json.decode out)]
-            (if (= (length items) 0)
-                ["no tickets"]
-                (let [lines [(.. (length items) " tickets sorted by created date")]]
-                  (each [_ t (ipairs items)]
-                    (table.insert lines
-                                  (string.format "%-12s %s  %s" t.key
-                                                 (or (and t.created (t.created:sub 1 10)) "?")
-                                                 t.title)))
-                  lines))))})
+          (utils.show-list out {:empty "no tickets"
+                                :what " tickets sorted by created date"
+                                :line (fn [t] (string.format "%-12s %s  %s" t.key
+                                                             (or (and t.created (t.created:sub 1 10)) "?")
+                                                             t.title))}))})

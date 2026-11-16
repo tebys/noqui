@@ -13,7 +13,6 @@
 (local dev (require :src.dev))
 (local context (require :src.context))
 (local watch (require :src.watch))
-(local review (require :src.review))
 (local sh (require :src.sh))
 (local agents (require :src.agents))
 (local hud (require :src.hud))
@@ -77,13 +76,6 @@
                               (open-terminal)
                               (= prompt ":claude")
                               (open-claude)
-                              (or (= prompt ":review") (prompt:match "^:review%s"))
-                              (let [args (icollect [w (prompt:gmatch "%S+") ] w)
-                                    [_ a b c] args]
-                                ;; :review [model] | :review repo ticket | :review model repo ticket
-                                (if c (review.run b c a)
-                                    b (review.run a b)
-                                    (review.run nil nil a)))
                               (= prompt ":tools")
                               (list-tools)
                               (= prompt ":demo")
@@ -113,7 +105,7 @@
     (ui.guide)
     (each [_ line (ipairs ["a -> b -> c to chain steps · :q to quit"
                            ":snippets · :tools · :dev [model] · :wt repo ticket · :fin"
-                           ":terminal · :claude · :review [model] [repo ticket] · :watch[!] [min|stop] · :demo"])]
+                           ":terminal · :claude · :watch[!] [min|stop] · :demo"])]
       (print (.. (ui.c :faint "│  ") (ui.c :faint line))))
     (print (ui.c :faint "└"))))
 

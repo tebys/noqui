@@ -1,5 +1,5 @@
 (import-macros {: deftool} :src.macros)
-(local json (require :dkjson))
+(local utils (require :src.utils))
 
 (deftool count
  {:short "counts the elements of a list"
@@ -7,7 +7,4 @@
  :input true
  :params []
  :run (fn [_ inputs]
-        (tostring (accumulate [total 0 _ input (ipairs inputs)]
-                    (let [list (json.decode input)]
-                      (assert (= (type list) :table) (.. "not a list: " input))
-                      (+ total (length list))))))})
+        (tostring (length (utils.decode-lists inputs))))})

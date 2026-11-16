@@ -1,6 +1,7 @@
 (import-macros {: deftool} :src.macros)
 (local json (require :dkjson))
 (local sh (require :src.sh))
+(local utils (require :src.utils))
 
 (local base (or (os.getenv "JIRA_URL") "https://auditboard.atlassian.net"))
 (local jql (or (os.getenv "JIRA_JQL")
@@ -73,13 +74,8 @@
                  (set done (or res.isLast (not page)))))
              (json.encode items))))
   :show (fn [out]
-          (let [items (json.decode out)]
-            (if (= (length items) 0)
-                ["ningún bug abierto en el sprint"]
-                (let [lines [(.. (length items) " bugs abiertos en el sprint")]]
-                  (each [_ t (ipairs items)]
-                    (table.insert lines
-                                  (string.format "%-12s [%s/%s] %s (%s)" t.key (or t.type "?")
-                                                 (or t.priority "?") t.title
-                                                 (or t.assignee "sin asignar"))))
-                  lines))))})
+          (utils.show-list out {:empty "ningún bug abierto en el sprint"
+                                :what " bugs abiertos en el sprint"
+                                :line (fn [t] (string.format "%-12s [%s/%s] %s (%s)" t.key (or t.type "?")
+                                                             (or t.priority "?") t.title
+                                                             (or t.assignee "sin asignar")))}))})

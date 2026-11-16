@@ -1,5 +1,6 @@
 (local json (require :dkjson))
 (local sh (require :src.sh))
+(local utils (require :src.utils))
 (local params (require :src.params))
 (import-macros {: each-local-repo : deftool} :src.macros)
 
@@ -15,10 +16,6 @@
               (icollect [line (out:gmatch "[^\n]+")]
                 {:detail line})))))
  :show (fn [out]
-         (let [items (json.decode out)]
-           (if (= (length items) 0)
-               ["nothing to prune"]
-               (let [lines [(.. (length items) " worktrees pruned")]]
-                 (each [_ item (ipairs items)]
-                   (table.insert lines (string.format "%-9s %s" item.repo item.detail)))
-                 lines))))})
+         (utils.show-list out {:empty "nothing to prune"
+                               :what " worktrees pruned"
+                               :line (fn [item] (string.format "%-9s %s" item.repo item.detail))}))})
