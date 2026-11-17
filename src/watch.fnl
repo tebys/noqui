@@ -416,6 +416,10 @@ available yet it waits for the next check without using up an attempt."
   (while (> (length watches) 0) (table.remove watches))
   (publish))
 
+(var last-log nil)
+
+(fn last-log-path [] last-log)
+
 (fn run [?arg ?auto]
   "`:watch [minutes]` starts the watch for the current worktree (Claude edits, the user
 commits); `:watch! [minutes]` also commits and pushes; `:watch stop` removes it."
@@ -437,7 +441,8 @@ commits); `:watch! [minutes]` also commits and pushes; `:watch stop` removes it.
                    :log-path (.. "/tmp/noqui-watch-" c.repo "-" c.ticket ".log")}]
             (table.insert watches w)
             (wlog w (.. "watch" (if ?auto "!" "") " of " c.repo " " c.ticket " every " minutes " min"))
+            (set last-log w.log-path)
             (check w)
             w.log-path)))))
 
-{: run : shutdown : allowed?}
+{: run : shutdown : allowed? : last-log-path}

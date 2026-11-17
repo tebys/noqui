@@ -48,6 +48,20 @@
               (ui.notice :info (.. "terminal opened in " wt.path))
               (ui.notice :error out))))))
 
+(fn follow-log []
+  "`:follow` opens a new terminal running tail -f on the log of the last :watch."
+  (let [log (watch.last-log-path)]
+    (if (not log)
+        (ui.notice :error "no watch log yet: start one with :watch first")
+        (let [script (.. log ".follow.command")]
+          (with-open [f (assert (io.open script :w))]
+            (f:write (.. "#!/bin/sh\ntouch " (sh.quote log) "\nexec tail -n 200 -f " (sh.quote log) "\n")))
+          (sh.run (.. "chmod +x " (sh.quote script)))
+          (let [(out code) (sh.run (.. (or config.terminal-run "open -a Terminal ") (sh.quote script)))]
+            (if (= code 0)
+                (ui.notice :info (.. "following " log))
+                (ui.notice :error out)))))))
+
 (fn open-claude []
   "`:claude` launches claude in a new terminal, in the worktree of the :wt mode."
   (let [wt (context.current)]
@@ -77,6 +91,8 @@
                               (open-terminal)
                               (= prompt ":claude")
                               (open-claude)
+                              (= prompt ":follow")
+                              (follow-log)
                               (or (= prompt ":review") (prompt:match "^:review%s"))
                               (let [args (icollect [w (prompt:gmatch "%S+") ] w)
                                     [_ a b c] args]
@@ -113,7 +129,7 @@
     (ui.guide)
     (each [_ line (ipairs ["a -> b -> c to chain steps · :q to quit"
                            ":snippets · :tools · :dev [model] · :wt repo ticket · :fin"
-                           ":terminal · :claude · :review [model] [repo ticket] · :watch[!] [min|stop] · :demo"])]
+                           ":terminal · :claude · :follow · :review [model] [repo ticket] · :watch[!] [min|stop] · :demo"])]
       (print (.. (ui.c :faint "│  ") (ui.c :faint line))))
     (print (ui.c :faint "└"))))
 
